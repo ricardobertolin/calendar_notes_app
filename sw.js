@@ -5,7 +5,7 @@
    once the new worker takes control (see the controllerchange handler in app.js). */
 'use strict';
 
-var SHELL_CACHE = 'retronotes-shell-v2';
+var SHELL_CACHE = 'retronotes-shell-v3';
 
 var SHELL = [
   './',
@@ -44,7 +44,8 @@ self.addEventListener('activate', function (e) {
   e.waitUntil(
     caches.keys().then(function (keys) {
       return Promise.all(keys.map(function (k) {
-        if (k !== SHELL_CACHE) return caches.delete(k);
+        // Other GitHub Pages apps share CacheStorage on this origin.
+        if (k.indexOf('retronotes-shell-') === 0 && k !== SHELL_CACHE) return caches.delete(k);
       }));
     }).then(function () { return self.clients.claim(); })
   );
@@ -70,8 +71,10 @@ self.addEventListener('fetch', function (e) {
         caches.open(SHELL_CACHE).then(function (c) { c.put('./index.html', copy); });
         return res;
       }).catch(function () {
-        return caches.match('./index.html', { ignoreSearch: true }).then(function (hit) {
-          return hit || caches.match('./').then(function (h2) { return h2 || OFFLINE(); });
+        return caches.open(SHELL_CACHE).then(function (c) {
+          return c.match('./index.html', { ignoreSearch: true }).then(function (hit) {
+            return hit || c.match('./').then(function (h2) { return h2 || OFFLINE(); });
+          });
         });
       })
     );

@@ -44,8 +44,16 @@ It meets the Chrome/Android install criteria and works as an iOS add-to-home-scr
 app. Icons cover 192, 512 and 512-maskable (Android adaptive) plus a 180px
 apple-touch-icon; `splash/` holds the eleven exact-size iPhone launch images iOS
 needs, since it ignores the manifest for those and shows a blank white screen
-without them. Every path is relative, so it installs correctly from a GitHub Pages
-project subpath, not just a domain root.
+without them. Asset and navigation paths are relative, so it installs from a
+GitHub Pages project subpath. Its stable app ID is explicitly `/calendar_notes_app/`;
+use a different unique ID when forking this into a separate app.
+
+Manifest `id` is resolved against the origin, unlike `scope` and `start_url`.
+Using `"id": "./"` would identify this app as the domain root and could make
+Chrome on Android mistake another installed Pages app for Retro Notes. Keep the
+explicit project ID. After publishing an ID fix, open the app online, let its
+service worker update, then reload before installing.
+See [manifest ID resolution](https://developer.mozilla.org/en-US/docs/Web/Progressive_web_apps/Manifest/Reference/id).
 
 Shortcuts (long-press the installed icon) jump straight to a new note or the
 notes list.
@@ -114,6 +122,16 @@ serves it cache-first. Navigations try the network first so a deploy lands,
 falling back to cache. **Bump `SHELL_CACHE` in `sw.js` when you deploy** — install
 refetches, activate drops the old cache, and the page reloads once the new worker
 takes over.
+
+Cache cleanup and offline navigation lookups are limited to Retro Notes caches,
+preserving the offline files belonging to other apps on the same Pages domain.
+
+### Checking installation and offline support
+
+Serve the parent folder on port 8765 and run `node tools/check-pwa.mjs`.
+The check uses headless Chrome to verify its computed app ID, installability,
+project scope, preservation of sibling caches, and offline shortcut launch.
+Set `BASE` or `CHROME_PATH` to override the default URL or Chrome executable.
 
 The app makes no third-party requests. Fonts are vendored into `fonts/` rather
 than loaded from Google Fonts, because a CDN stylesheet cannot be precached: the
