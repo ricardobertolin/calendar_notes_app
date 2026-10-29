@@ -438,6 +438,31 @@
     return words + ' WORDS · ' + ed.body.length + ' CHARS';
   }
 
+  // Nothing at all once the app is installed — see installState().
+  function installSection() {
+    var st = installState();
+    if (st === 'done') return '';
+
+    var body;
+    if (st === 'ready') {
+      body = '<div class="rn-dlg-row">'
+        + '<button class="rn-btn-flat rn-btn-default" data-act="installApp">INSTALL</button>'
+        + '</div>'
+        + '<div class="rn-dlg-fine">Opens full screen from your home screen, works offline, same notes.</div>';
+    } else if (st === 'ios') {
+      body = '<div class="rn-dlg-fine">In Safari: tap Share, then “Add to Home Screen”. '
+        + 'iOS gives a page no way to do this for you.</div>';
+    } else {
+      body = '<div class="rn-dlg-fine">Open the browser menu and pick “Install app” or '
+        + '“Add to Home screen”. If it isn’t offered yet, reload once and look again.</div>';
+    }
+
+    return '<div class="rn-setting">'
+      + '<span class="rn-dlg-label">HOME SCREEN</span>'
+      + body
+      + '</div>';
+  }
+
   function dialogHTML(d) {
     if (S.dialog === 'date') {
       var ed = d.ed;
@@ -481,6 +506,7 @@
 
     if (S.dialog === 'settings') {
       return '<div class="rn-dlg-label">SETTINGS</div>'
+        + installSection()
         + '<div class="rn-setting">'
         + '<span class="rn-dlg-label">SCREEN</span>'
         + '<div class="rn-seg" role="group" aria-label="Screen">'
@@ -598,6 +624,54 @@
   }
 
   function announce(msg) { $('live').textContent = msg; }
+
+  // ----------------------------------------------------------------- install
+
+  /* Chrome fires beforeinstallprompt once the manifest and the worker check
+     out, and it is the only way to open the install prompt from a button. The
+     event is held here so Settings can spend it later. Safari never fires it
+     and exposes no equivalent, so on iOS the panel can only say where Apple
+     put the button. */
+
+  var installEvt = null;
+  var installDone = false;
+
+  function isStandalone() {
+    // navigator.standalone is the iOS-only signal; the media queries cover the
+    // rest, including the minimal-ui and fullscreen fallbacks in the manifest.
+    if (navigator.standalone === true) return true;
+    if (!window.matchMedia) return false;
+    return ['standalone', 'minimal-ui', 'fullscreen'].some(function (m) {
+      return window.matchMedia('(display-mode: ' + m + ')').matches;
+    });
+  }
+
+  function isIOS() {
+    // iPadOS reports itself as MacIntel, so touch points are the tell.
+    return /iPad|iPhone|iPod/.test(navigator.userAgent) ||
+      (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
+  }
+
+  // 'done' hides the row; 'ready' can prompt; the others can only explain.
+  function installState() {
+    if (installDone || isStandalone()) return 'done';
+    if (installEvt) return 'ready';
+    return isIOS() ? 'ios' : 'manual';
+  }
+
+  window.addEventListener('beforeinstallprompt', function (e) {
+    e.preventDefault();
+    installEvt = e;
+    if (S && S.dialog === 'settings') render();
+  });
+
+  window.addEventListener('appinstalled', function () {
+    installEvt = null;
+    installDone = true;
+    if (!S) return;
+    render();
+    announce('Installed. Retro Notes is on your home screen.');
+  });
 
   // ------------------------------------------------------------------ actions
 
@@ -795,6 +869,20 @@
     stop: function () { /* swallow clicks inside the dialog */ },
 
     openSettings: function () { S.dialog = 'settings'; },
+    installApp: function () {
+      if (!installEvt) return;
+      var e = installEvt;
+      // prompt() may only be spent once per event. On a dismissal Chrome fires
+      // a fresh beforeinstallprompt later, which puts the button back.
+      installEvt = null;
+      e.prompt();
+      var done = function (choice) {
+        if (choice && choice.outcome === 'accepted') installDone = true;
+        render();
+      };
+      e.userChoice.then(done, function () { render(); });
+      return true;   // skip the immediate render: the native prompt is up
+    },
     setTheme: function (v) { S.theme = v === 'Dark' ? 'Dark' : 'Light'; savePrefs(); },
     setWeekStart: function (v) { S.weekStart = v === 'Sun' ? 'Sun' : 'Mon'; savePrefs(); },
 

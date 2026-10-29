@@ -5,7 +5,7 @@
    once the new worker takes control (see the controllerchange handler in app.js). */
 'use strict';
 
-var SHELL_CACHE = 'retronotes-shell-v3';
+var SHELL_CACHE = 'retronotes-shell-v4';
 
 var SHELL = [
   './',
@@ -60,7 +60,29 @@ var OFFLINE = function () {
 self.addEventListener('fetch', function (e) {
   var req = e.request;
   if (req.method !== 'GET') return;
-  if (new URL(req.url).origin !== location.origin) return;
+  var url = new URL(req.url);
+  if (url.origin !== location.origin) return;
+
+  // The browser reads the manifest through this worker when it decides whether
+  // the app is installable. Handing it a copy from an old deploy is exactly how
+  // an install option goes missing and stays missing, so the manifest is
+  // network-first and only falls back to the cache offline.
+  if (/manifest\.webmanifest$/.test(url.pathname)) {
+    e.respondWith(
+      fetch(req).then(function (res) {
+        if (res && res.ok) {
+          var fresh = res.clone();
+          caches.open(SHELL_CACHE).then(function (c) { c.put(req, fresh); });
+        }
+        return res;
+      }).catch(function () {
+        return caches.open(SHELL_CACHE).then(function (c) {
+          return c.match(req, { ignoreSearch: true }).then(function (hit) { return hit || OFFLINE(); });
+        });
+      })
+    );
+    return;
+  }
 
   // Navigations: try the network so a fresh deploy is picked up, fall back to
   // the cached shell when offline. Query strings (?new=1) must not miss.

@@ -82,6 +82,33 @@ try {
     const { installabilityErrors } = await send('Page.getInstallabilityErrors');
     return installabilityErrors.length === 0 || installabilityErrors;
   });
+  await check('Settings offers an INSTALL button, and hides the row once installed', () => evaluate(`(async () => {
+    const dialog = () => document.querySelector('#dialogBody').textContent;
+    const button = () => document.querySelector('#dialogBody [data-act=installApp]');
+    const tick = () => new Promise(r => setTimeout(r, 50));
+
+    // Chrome fires the real beforeinstallprompt during load when the app is
+    // installable, so the button is already waiting the first time Settings opens.
+    document.querySelector('[data-act=openSettings]').click();
+    await tick();
+    const offered = dialog().includes('HOME SCREEN') && !!button();
+
+    // Swap in a stand-in event before clicking: spending the real one would put
+    // an OS install dialog on screen that nothing here can answer.
+    let prompted = false;
+    const stub = new Event('beforeinstallprompt');
+    stub.prompt = () => { prompted = true; };
+    stub.userChoice = Promise.resolve({ outcome: 'accepted' });
+    window.dispatchEvent(stub);
+    await tick();
+
+    button().click();
+    await tick();
+    const accepted = prompted && !dialog().includes('HOME SCREEN');
+
+    document.querySelector('[data-act=closeDialog]').click();
+    return (offered && accepted) || { offered, accepted };
+  })()`));
   await check('launch URL and worker scope stay inside the project', () => evaluate(`(async () => {
     const reg = await navigator.serviceWorker.ready;
     const manifestURL = document.querySelector('link[rel=manifest]').href;
@@ -135,6 +162,30 @@ try {
       };
       return Object.values(state).every(Boolean) || state;
     })()`);
+  });
+  // Last, because it reloads the page under a faked navigator. CDP accepts
+  // Emulation.setEmulatedMedia for display-mode but does not actually apply it,
+  // so the iOS signal is the one standalone branch a headless run can reach.
+  await check('Settings hides the install row when already on the home screen', async () => {
+    await send('Network.emulateNetworkConditions', {
+      offline: false, latency: 0, downloadThroughput: -1, uploadThroughput: -1
+    });
+    const { identifier } = await send('Page.addScriptToEvaluateOnNewDocument', {
+      source: `Object.defineProperty(navigator, 'standalone', { value: true, configurable: true });`
+    });
+    try {
+      await send('Page.navigate', { url: BASE });
+      await sleep(1500);
+      return evaluate(`(async () => {
+        document.querySelector('[data-act=openSettings]').click();
+        await new Promise(r => setTimeout(r, 50));
+        const text = document.querySelector('#dialogBody').textContent;
+        document.querySelector('[data-act=closeDialog]').click();
+        return !text.includes('HOME SCREEN') || text;
+      })()`);
+    } finally {
+      await send('Page.removeScriptToEvaluateOnNewDocument', { identifier });
+    }
   });
   console.log(`${passed} passed, ${failed} failed`);
   process.exitCode = failed ? 1 : 0;

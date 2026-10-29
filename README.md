@@ -55,6 +55,20 @@ explicit project ID. After publishing an ID fix, open the app online, let its
 service worker update, then reload before installing.
 See [manifest ID resolution](https://developer.mozilla.org/en-US/docs/Web/Progressive_web_apps/Manifest/Reference/id).
 
+Settings carries a **HOME SCREEN** row that disappears once the app is installed.
+Where the browser supports it — Chrome and Edge — the row is an INSTALL button
+wired to the held `beforeinstallprompt` event, which is the only way a page can
+open the install prompt itself; browsers that never fire it, iOS Safari above
+all, get the menu path in words instead. This exists because the browser's own
+install entry is buried in a menu and, on a stale service worker, can be missing
+altogether.
+
+The worker fetches `manifest.webmanifest` network-first for the same reason.
+Everything else is cache-first and only refreshes when `SHELL_CACHE` is bumped,
+but the manifest is what the browser reads to decide the app is installable, and
+a copy left over from an older deploy is enough to keep the install option from
+ever appearing.
+
 Shortcuts (long-press the installed icon) jump straight to a new note or the
 notes list.
 
@@ -130,7 +144,8 @@ preserving the offline files belonging to other apps on the same Pages domain.
 
 Serve the parent folder on port 8765 and run `node tools/check-pwa.mjs`.
 The check uses headless Chrome to verify its computed app ID, installability,
-project scope, preservation of sibling caches, and offline shortcut launch.
+project scope, preservation of sibling caches, offline shortcut launch, and the
+Settings install row — offered when the prompt is available, gone once installed.
 Set `BASE` or `CHROME_PATH` to override the default URL or Chrome executable.
 
 The app makes no third-party requests. Fonts are vendored into `fonts/` rather
